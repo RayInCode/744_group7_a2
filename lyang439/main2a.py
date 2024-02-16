@@ -85,7 +85,7 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
                 
         if batch_idx >= 39:
             break
-                
+
     return None
 
 def test_model(model, test_loader, criterion):
@@ -146,7 +146,9 @@ def main():
     # running training for one epoch
     for epoch in range(1):
         train_model(model, train_loader, optimizer, training_criterion, epoch)
-
+        
+        dist.destroy_process_group()
+        
         # only master need to test the accuracy of the final model
         if args.rank == 0:
             test_model(model, test_loader, training_criterion)
