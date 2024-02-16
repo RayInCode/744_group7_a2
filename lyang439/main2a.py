@@ -40,7 +40,7 @@ def sync_gradient(model):
         print("{}: {}".format(id(param.grad), param.grad))
         # gather all gradients of current param from all nodes to master nodes
         if args.rank == 0:
-            grad_gather = [torch.zeros_like(param.grad) for _ in args.num_nodes]  # only grad_gather need a list to gather the gradients
+            grad_gather = [torch.zeros_like(param.grad) for _ in range(args.num_nodes)]  # only grad_gather need a list to gather the gradients
             dist.gather(param.grad, grad_gather, dst=0)
         else:
             dist.gather(param.grad, gather_list = None, dst=0)
