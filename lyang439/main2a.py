@@ -37,9 +37,10 @@ batch_size = global_batch_size // args.num_nodes    # batch for one node
 
 def sync_gradient(model):
     for param in model.parameters():
+        print("{}: {}".format(id(param.grad), param.grad))
         # gather all gradients of current param from all nodes to master nodes
         if args.rank == 0:
-            grad_gather = [torch.zeros_like(param.grad) for _ in range(dist.get_world_size())]  # only grad_gather need a list to gather the gradients
+            grad_gather = [torch.zeros_like(param.grad) for _ in args.num_nodes]  # only grad_gather need a list to gather the gradients
             dist.gather(param.grad, grad_gather, dst=0)
         else:
             dist.gather(param.grad, gather_list = None, dst=0)
@@ -50,6 +51,7 @@ def sync_gradient(model):
         
         # broadcast the mean gradient to each node
         dist.broadcast(param.grad, src=0)
+        print("{}: {}".format(id(param.grad), param.grad))
     
     return None
 
