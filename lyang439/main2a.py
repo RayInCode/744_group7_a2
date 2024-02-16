@@ -95,7 +95,7 @@ def test_model(model, test_loader, criterion):
     with torch.no_grad():
         for batch_idx, (data, target) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
-            output = model.module(data)
+            output = model(data)
             test_loss += criterion(output, target)
             pred = output.max(1, keepdim=True)[1]
             correct += pred.eq(target.view_as(pred)).sum().item()
