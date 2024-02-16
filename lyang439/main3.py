@@ -35,29 +35,6 @@ dist.init_process_group(backend='gloo', rank=args.rank, world_size=args.num_node
 global_batch_size = 256     # global  batch size for the whole cluster used in distriputed training
 batch_size = global_batch_size // args.num_nodes    # batch for one node
 
-def sync_gradient(model):
-    for param in model.parameters():
-        if param.requires_grad:
-            # gather all gradients of current param from all nodes to master nodes
-            if args.rank == 0:
-                grad_gather = [torch.zeros_like(param.grad.data) for _ in range(dist.get_world_size())]  # only grad_gather need a list to gather the gradients
-                dist.gather(param.grad.data, grad_gather, dst=0)
-            else:
-                dist.gather(param.grad.data, gather_list = None, dst=0)
-
-            # calculate the mean gradient of curr param in master node
-            if args.rank == 0:
-                param.grad.data = torch.mean(torch.stack(grad_gather), 0)
-            
-            # broadcast the mean gradient to each node
-            dist.broadcast(param.grad.data, src=0)
-    
-    return None
-
-            
-
-
-
 def train_model(model, train_loader, optimizer, criterion, epoch):
     """
     model (torch.nn.module): The model created to train
@@ -76,7 +53,6 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         output = model(data)    # forward pass
         loss = criterion(output, target)    # calculate the loss
         loss.backward()     # backwaed pass to calculate the gradients
-        sync_gradient(model)
         optimizer.step()    # update the model with the gradients
 
         if batch_idx % 20 == 0 or batch_idx == len(train_loader) - 1:
@@ -139,7 +115,7 @@ def main():
 
     model = mdl.VGG11()
     model.to(device)
-    #model = DDP(model)
+    model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr=0.1,
                           momentum=0.9, weight_decay=0.0001)
 
