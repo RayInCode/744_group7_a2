@@ -39,17 +39,17 @@ def sync_gradient(model):
     for param in model.parameters():
         # gather all gradients of current param from all nodes to master nodes
         if args.rank == 0:
-            grad_gather = [torch.zeros_like(param.grad.data) for _ in range(dist.get_world_size())]  # only grad_gather need a list to gather the gradients
-            dist.gather(param.grad.data, grad_gather, dst=0)
+            grad_gather = [torch.zeros_like(param.grad) for _ in range(dist.get_world_size())]  # only grad_gather need a list to gather the gradients
+            dist.gather(param.grad, grad_gather, dst=0)
         else:
-            dist.gather(param.grad.data, gather_list = None, dst=0)
+            dist.gather(param.grad, gather_list = None, dst=0)
 
         # calculate the mean gradient of curr param in master node
         if args.rank == 0:
-            param.grad.data = torch.mean(torch.stack(grad_gather), 0)
+            param.grad = torch.mean(torch.stack(grad_gather), 0)
         
         # broadcast the mean gradient to each node
-        dist.broadcast(param.grad.data, src=0)
+        dist.broadcast(param.grad, src=0)
     
     return None
 
