@@ -37,14 +37,10 @@ batch_size = global_batch_size // args.num_nodes    # batch for one node
 
 def sync_gradient(model):
     for param in model.parameters():
-        if param.requires_grad:
-            dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
-            param.grad.data /= args.num_nodes
+        dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+        param.grad.data /= args.num_nodes
     
     return None
-
-            
-
 
 
 def train_model(model, train_loader, optimizer, criterion, epoch):
