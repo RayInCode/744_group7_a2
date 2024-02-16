@@ -50,7 +50,6 @@ def sync_gradient(model):
         
         # broadcast the mean gradient to each node
         dist.broadcast(param.grad, src=0)
-        print("{}: {}".format(id(param.grad), param.grad))
     
     return None
 
