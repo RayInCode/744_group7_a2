@@ -137,7 +137,7 @@ def main():
 
     model = mdl.VGG11()
     model.to(device)
-    model = DDP(model, device_ids=[args.rank])
+    model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr=0.1,
                           momentum=0.9, weight_decay=0.0001)
 
