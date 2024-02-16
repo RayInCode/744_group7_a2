@@ -147,6 +147,8 @@ def main():
     for epoch in range(1):
         train_model(model, train_loader, optimizer, training_criterion, epoch)
         
+        torch.distributed.barrier()
+        
         # only master need to test the accuracy of the final model
         if args.rank == 0:
             test_model(model, test_loader, training_criterion)
