@@ -79,10 +79,10 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         sync_gradient(model)
         optimizer.step()    # update the model with the gradients
 
-
-        if batch_idx % 20 == 0 or batch_idx == len(train_loader):
-            print('Train Epoch {}: [{}/{} ({:.1f}%)]\tBatch {}\tLoss: {:.4f}'.format(
-                epoch, batch_idx,  len(train_loader), 100. * batch_idx / len(train_loader), batch_idx, loss.item()))
+        if args.rank == 0:
+            if batch_idx % 20 == 0 or batch_idx == len(train_loader):
+                print('Train Epoch {}: [{}/{} ({:.1f}%)]\tBatch {}\tLoss: {:.4f}'.format(
+                    epoch, batch_idx,  len(train_loader), 100. * batch_idx / len(train_loader), batch_idx, loss.item()))
         
     return None
 
