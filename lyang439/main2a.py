@@ -95,7 +95,7 @@ def test_model(model, test_loader, criterion):
     with torch.no_grad():
         for batch_idx, (data, target) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
-            output = model(data)
+            output = model.module(data)
             test_loss += criterion(output, target)
             pred = output.max(1, keepdim=True)[1]
             correct += pred.eq(target.view_as(pred)).sum().item()
@@ -146,8 +146,8 @@ def main():
     # running training for one epoch
     for epoch in range(1):
         train_model(model, train_loader, optimizer, training_criterion, epoch)
-        
-        torch.distributed.barrier()
+
+        dist.barrier()
         
         # only master need to test the accuracy of the final model
         if args.rank == 0:
