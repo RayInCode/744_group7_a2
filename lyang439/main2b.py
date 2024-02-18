@@ -26,6 +26,7 @@ args = parser.parse_args()
 device = torch.device("cpu")
 torch.set_num_threads(4)
 torch.manual_seed(0)    # for checking the correctness 
+np.random.seed(0)
 
 # Set up for distributed training
 os.environ['MASTER_ADDR'] = args.master_ip
@@ -34,6 +35,9 @@ dist.init_process_group(backend='gloo', rank=args.rank, world_size=args.num_node
 
 global_batch_size = 256     # global  batch size for the whole cluster used in distriputed training
 batch_size = global_batch_size // args.num_nodes    # batch for one node
+
+def worker_init_fn(worker_id):
+    np.random.seed(0 + worker_id)
 
 def sync_gradient(model):
     for param in model.parameters():
