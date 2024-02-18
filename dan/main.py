@@ -9,40 +9,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 import logging
 import random
-import argparse
 import model as mdl
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
-
-# Parse arguments to get master's IP address, the rank and the number of nodes
-parser = argparse.ArgumentParser(description='Parse DataParallel Traning Arguments')
-parser.add_argument('--master-ip', type=str, help='IP address of the master node')
-parser.add_argument('--num-nodes', type=int, default=4, help='Total number of nodes')
-parser.add_argument('--rank', type=int, help='Rank of the current node')
-args = parser.parse_args()
-
-# Set up
-device = torch.device("cpu")
+device = "cpu"
 torch.set_num_threads(4)
-torch.manual_seed(0)    # for checking the correctness 
 
-# Set up for distributed training
-os.environ['MASTER_ADDR'] = args.master_ip
-os.environ['MASTER_PORT'] = '6586'
-dist.init_process_group(backend='gloo', rank=args.rank, world_size=args.num_nodes)
-
-global_batch_size = 256     # global  batch size for the whole cluster used in distriputed training
-batch_size = global_batch_size // args.num_nodes    # batch for one node
-
-def sync_gradient(model):
-    for param in model.parameters():
-        dist.all_reduce(param.grad, op=dist.ReduceOp.SUM)
-        param.grad.data /= args.num_nodes
-    
-    return None
-
-
+batch_size = 256 # batch for one node
 def train_model(model, train_loader, optimizer, criterion, epoch):
     """
     model (torch.nn.module): The model created to train
@@ -52,24 +23,25 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
     epoch (int): Current epoch number
     """
 
-    model.train()   # set the model to trainning mode
-
     # remember to exit the train loop at end of the epoch
+    running_loss = 0.0
     for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)   # load data to device(cpu here)
-        optimizer.zero_grad()   # clean all the gradient generated for last batch
-        output = model(data)    # forward pass
-        loss = criterion(output, target)    # calculate the loss
-        loss.backward()     # backwaed pass to calculate the gradients
-        sync_gradient(model)
-        optimizer.step()    # update the model with the gradients
+        # Your code goes here!
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        # Forward pass
+        output = model(data)
+        loss = criterion(output, target)
 
-        if batch_idx % 20 == 0 or batch_idx == len(train_loader) - 1:
-                print('Train Epoch {}: [{}/{} ({:.1f}%)]\tBatch {}\tLoss: {:.4f}'.format(
-                    epoch, batch_idx + 1,  len(train_loader), 100. * (batch_idx+1) / len(train_loader), batch_idx, loss.item()))
-                
-        if batch_idx >= 39:
-            break
+        # Backward pass
+        loss.backward()
+        optimizer.step()
+        
+        # Print every 20 iterations
+        running_loss += loss.item()
+        if batch_idx % 20 == 19:
+            print(f'Epoch {epoch + 1}, Batch {batch_idx + 1}, Loss: {running_loss / 100:.3f}')
+            running_loss = 0.0
 
     return None
 
@@ -106,39 +78,30 @@ def main():
             normalize])
     training_set = datasets.CIFAR10(root="./data", train=True,
                                                 download=True, transform=transform_train)
-    train_sampler = DistributedSampler(training_set, num_replicas=args.num_nodes, rank=args.rank)
     train_loader = torch.utils.data.DataLoader(training_set,
                                                     num_workers=2,
                                                     batch_size=batch_size,
-                                                    sampler=train_sampler,
+                                                    sampler=None,
+                                                    shuffle=True,
                                                     pin_memory=True)
     test_set = datasets.CIFAR10(root="./data", train=False,
                                 download=True, transform=transform_test)
 
     test_loader = torch.utils.data.DataLoader(test_set,
                                               num_workers=2,
-                                              batch_size=global_batch_size,
+                                              batch_size=batch_size,
                                               shuffle=False,
                                               pin_memory=True)
     training_criterion = torch.nn.CrossEntropyLoss().to(device)
 
     model = mdl.VGG11()
     model.to(device)
-    #model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr=0.1,
                           momentum=0.9, weight_decay=0.0001)
-
     # running training for one epoch
     for epoch in range(1):
         train_model(model, train_loader, optimizer, training_criterion, epoch)
-
-        dist.barrier()
-        
-        # only master need to test the accuracy of the final model
-        if args.rank == 0:
-            test_model(model, test_loader, training_criterion)
-
-    dist.destroy_process_group()
+        test_model(model, test_loader, training_criterion)
 
 if __name__ == "__main__":
     main()
