@@ -106,7 +106,7 @@ def main():
             normalize])
     training_set = datasets.CIFAR10(root="./data", train=True,
                                                 download=True, transform=transform_train)
-    train_sampler = DistributedSampler(training_set, num_replicas=args.num_nodes, rank=args.rank)
+    train_sampler = DistributedSampler(training_set, num_replicas=args.num_nodes, rank=args.rank, seed=0)
     train_loader = torch.utils.data.DataLoader(training_set,
                                                     num_workers=2,
                                                     batch_size=batch_size,
