@@ -85,7 +85,8 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         optimizer.step()    # update the model with the gradients
 
         end_time = time.time
-        total_time.append[end_time - start_time]
+        duration = end_time - start_time
+        total_time.append[duration]
 
 
         if batch_idx % 20 == 0 or batch_idx == len(train_loader) - 1:
