@@ -84,7 +84,7 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         sync_gradient(model)
         optimizer.step()    # update the model with the gradients
 
-        end_time = time.time
+        end_time = time.time()
         duration = end_time - start_time
         total_time.append[duration]
 
