@@ -86,7 +86,7 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
 
         end_time = time.time()
         duration = end_time - start_time
-        total_time.append[duration]
+        total_time.append(duration)
 
 
         if batch_idx % 20 == 0 or batch_idx == len(train_loader) - 1:
