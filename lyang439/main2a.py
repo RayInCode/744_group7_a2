@@ -46,7 +46,7 @@ def sync_gradient(model):
 
         # calculate the mean gradient of curr param in master node
         if args.rank == 0:
-            param.grad = torch.sum(torch.stack(grad_gather), 0)/args.nums_nodes
+            param.grad = torch.sum(torch.stack(grad_gather), 0)/args.num_nodes
         
         # broadcast the mean gradient to each node
         dist.broadcast(param.grad, src=0)
