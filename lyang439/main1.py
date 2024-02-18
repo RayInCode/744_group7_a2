@@ -1,4 +1,5 @@
 import os
+import time
 import torch
 import json
 import copy
@@ -25,9 +26,11 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
     """
 
     model.train()   # set the model to trainning mode
-
+    total_time = []
     # remember to exit the train loop at end of the epoch
     for batch_idx, (data, target) in enumerate(train_loader):
+        start_time = time.time()
+
         data, target = data.to(device), target.to(device)   # load data to device(cpu here)
         optimizer.zero_grad()   # clean all the gradient generated for last batch
         output = model(data)    # forward pass
@@ -35,6 +38,9 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         loss.backward()     # backwaed pass to calculate the gradients
         optimizer.step()    # update the model with the gradients
 
+        end_time = time.time()
+        duration = end_time - start_time
+        total_time.append(duration)
 
         if batch_idx % 20 == 0 or batch_idx == len(train_loader) - 1:
             print('Train Epoch {}: [{}/{} ({:.1f}%)]\tBatch {}\tLoss: {:.4f}'.format(
@@ -43,6 +49,7 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         if batch_idx >= 39:
             break
 
+    print('Runtime: Total: {:.4f}, Each iteration: {:.4f}\n'.format(sum(total_time[1:]), sum(total_time[1:])/len(total_time[1:])))
     return None
 
 def test_model(model, test_loader, criterion):
