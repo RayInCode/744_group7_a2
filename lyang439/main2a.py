@@ -151,7 +151,7 @@ def main():
                                             pin_memory=True)
     training_criterion = torch.nn.CrossEntropyLoss().to(device)
 
-    model = mdl.VGG11(False)
+    model = mdl.VGG11()
     model.to(device)
     #model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr=0.1,
