@@ -46,5 +46,6 @@ class _VGG(nn.Module):
         return y
 
 
-def VGG11():
-    return _VGG('VGG11')
+def VGG11(track_running_stats=False):
+    return _VGG('VGG11', track_running_stats=track_running_stats)
+
