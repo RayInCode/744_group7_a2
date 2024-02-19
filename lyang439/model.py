@@ -44,8 +44,16 @@ class _VGG(nn.Module):
         y = y.view(y.size(0), -1)
         y = self.fc1(y)
         return y
+    
+    def disable_batchnorm(self):
+        for module in self.modules():
+            if isinstance(module, nn.BatchNorm2d):
+                module.eval()
 
 
 def VGG11():
     return _VGG('VGG11')
+
+
+
 

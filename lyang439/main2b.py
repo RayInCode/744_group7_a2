@@ -136,6 +136,7 @@ def main():
     training_criterion = torch.nn.CrossEntropyLoss().to(device)
 
     model = mdl.VGG11()
+    model.disable_batchnorm()
     model.to(device)
     #model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr=0.1,

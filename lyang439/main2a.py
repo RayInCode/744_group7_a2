@@ -40,6 +40,7 @@ batch_size = global_batch_size // args.num_nodes    # batch for one node
 def worker_init_fn(worker_id):
     np.random.seed(0 + worker_id)
 
+
 def sync_gradient(model):
     for param in model.parameters():
         # gather all gradients of current param from all nodes to master nodes
@@ -152,6 +153,7 @@ def main():
     training_criterion = torch.nn.CrossEntropyLoss().to(device)
 
     model = mdl.VGG11()
+    model.disable_batchnorm()
     model.to(device)
     #model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr=0.1,
