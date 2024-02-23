@@ -67,12 +67,12 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         optimizer.zero_grad()   # clean all the gradient generated for last batch
         output = model(data)    # forward pass
         loss = criterion(output, target)    # calculate the loss
+        loss.backward()     # backwaed pass to calculate the gradients
 
         start_time = time.time()
-        loss.backward()     # backwaed pass to calculate the gradients
+        sync_gradient(model)
         end_time = time.time()
 
-        sync_gradient(model)
         optimizer.step()    # update the model with the gradients
 
         duration = end_time - start_time
