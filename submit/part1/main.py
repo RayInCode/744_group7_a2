@@ -46,8 +46,6 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
             print('Train Epoch {}: [{}/{} ({:.1f}%)]\tBatch {}\tLoss: {:.4f}'.format(
                 epoch, batch_idx + 1,  len(train_loader), 100. * (batch_idx+1) / len(train_loader), batch_idx, loss.item()))
 
-        if batch_idx >= 39:
-            break
 
     print('Runtime: Total: {:.4f}, Each iteration: {:.4f}\n'.format(sum(total_time[1:]), sum(total_time[1:])/len(total_time[1:])))
     return None
