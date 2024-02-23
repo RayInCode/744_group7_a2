@@ -42,22 +42,29 @@ def worker_init_fn(worker_id):
 
 
 def sync_gradient(model):
+    # Gradient synchronization using gather and scatter
     for param in model.parameters():
-        # gather all gradients of current param from all nodes to master nodes
-        if args.rank == 0:
-            grad_gather = [torch.zeros_like(param.grad) for _ in range(args.num_nodes)]  # only grad_gather need a list to gather the gradients
-            dist.gather(param.grad, grad_gather, dst=0)
-        else:
-            dist.gather(param.grad, gather_list = None, dst=0)
+        if param.requires_grad:
+            # Initialize an empty tensor for scatter_grad on all ranks
+            scatter_grad = torch.zeros_like(param.grad)
 
-        # calculate the mean gradient of curr param in master node
-        if args.rank == 0:
-            param.grad = torch.sum(torch.stack(grad_gather), 0)/args.num_nodes
-        
-        # broadcast the mean gradient to each node
-        dist.broadcast(param.grad, src=0)
-    
-    return None
+            if args.rank == 0:
+                # Only rank 0 prepares gathered_grads and performs the averaging
+                gathered_grads = [torch.zeros_like(param.grad) for _ in range(args.num_nodes)]
+                dist.gather(param.grad.data, gather_list=gathered_grads, dst=0)
+                mean_grad = torch.mean(torch.stack(gathered_grads), dim=0)
+                for i in range(args.num_nodes):
+                    gathered_grads[i] = mean_grad
+                # Scatter averaged gradients from rank 0
+                dist.scatter(tensor=scatter_grad, scatter_list=gathered_grads, src=0)
+            else:
+                # Non-source ranks call scatter with an empty list for scatter_list
+                dist.gather(param.grad.data, dst=0)
+                dist.scatter(tensor=scatter_grad, scatter_list=[], src=0)
+
+            # Update gradients with the scattered values
+            param.grad.data = scatter_grad.data
+
 
         
 def train_model(model, train_loader, optimizer, criterion, epoch):
@@ -99,7 +106,7 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         if batch_idx >= 39:
             break
         
-    print('Runtime: Total: {:.4f}, Each gradient synchonization (boardcast): {:.4f}\n'.format(sum(total_time[1:]), sum(total_time[1:])/len(total_time[1:])))
+    print('Runtime: Total: {:.4f}, Each gradient synchonization (scatter): {:.4f}\n'.format(sum(total_time[1:]), sum(total_time[1:])/len(total_time[1:])))
     return None
 
 def test_model(model, test_loader, criterion):
