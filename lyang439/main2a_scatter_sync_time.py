@@ -1,4 +1,5 @@
 import os
+import time
 import torch
 import json
 import copy
@@ -9,30 +10,57 @@ import torch.nn.functional as F
 import torch.optim as optim
 import logging
 import random
-import model as mdl
 import argparse
+import model as mdl
 import torch.distributed as dist
-from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
-import time
+from torch.utils.data.distributed import DistributedSampler
 
-device = "cpu"
+# Parse arguments to get master's IP address, the rank and the number of nodes
+parser = argparse.ArgumentParser(description='Parse DataParallel Traning Arguments')
+parser.add_argument('--master-ip', type=str, help='IP address of the master node')
+parser.add_argument('--num-nodes', type=int, default=4, help='Total number of nodes')
+parser.add_argument('--rank', type=int, help='Rank of the current node')
+args = parser.parse_args()
+
+# Set up
+device = torch.device("cpu")
 torch.set_num_threads(4)
+torch.manual_seed(0)    # for checking the correctness 
+np.random.seed(0)
 
-global_batch_size = 256 # batch for one node
+# Set up for distributed training
+os.environ['MASTER_ADDR'] = args.master_ip
+os.environ['MASTER_PORT'] = '6585'
+dist.init_process_group(backend='gloo', rank=args.rank, world_size=args.num_nodes)
 
-def setup_seed(seed_value=42):
-    torch.manual_seed(seed_value)
-    np.random.seed(seed_value)
-    # random.seed(seed_value)
-    # torch.backends.cudnn.deterministic = True
+global_batch_size = 256     # global  batch size for the whole cluster used in distriputed training
+batch_size = global_batch_size // args.num_nodes    # batch for one node
 
-def setup(rank, world_size, master_addr, master_port):
-    os.environ['MASTER_ADDR'] = master_addr
-    os.environ['MASTER_PORT'] = master_port
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+def worker_init_fn(worker_id):
+    np.random.seed(0 + worker_id)
 
-def train_model(model, train_loader, optimizer, criterion, epoch, rank, world_size):
+
+def sync_gradient(model):
+    for param in model.parameters():
+        # gather all gradients of current param from all nodes to master nodes
+        if args.rank == 0:
+            grad_gather = [torch.zeros_like(param.grad) for _ in range(args.num_nodes)]  # only grad_gather need a list to gather the gradients
+            dist.gather(param.grad, grad_gather, dst=0)
+        else:
+            dist.gather(param.grad, gather_list = None, dst=0)
+
+        # calculate the mean gradient of curr param in master node
+        if args.rank == 0:
+            param.grad = torch.sum(torch.stack(grad_gather), 0)/args.num_nodes
+        
+        # broadcast the mean gradient to each node
+        dist.broadcast(param.grad, src=0)
+    
+    return None
+
+        
+def train_model(model, train_loader, optimizer, criterion, epoch):
     """
     model (torch.nn.module): The model created to train
     train_loader (pytorch data loader): Training data loader
@@ -41,45 +69,28 @@ def train_model(model, train_loader, optimizer, criterion, epoch, rank, world_si
     epoch (int): Current epoch number
     """
 
-    # remember to exit the train loop at end of the epoch
-    model.train()  # set the model to training mode
+    model.train()   # set the model to trainning mode
     total_time = []
+
+    # remember to exit the train loop at end of the epoch
     for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()  # zero the parameter gradients
-        output = model(data)  # forward pass
-        loss = criterion(output, target)  # calculate the loss
-        loss.backward()  # backward pass
+
+
+        data, target = data.to(device), target.to(device)   # load data to device(cpu here)
+        optimizer.zero_grad()   # clean all the gradient generated for last batch
+        output = model(data)    # forward pass
+        loss = criterion(output, target)    # calculate the loss
+        loss.backward()     # backwax`ed pass to calculate the gradients
 
         start_time = time.time()
-        # Gradient synchronization using gather and scatter
-        for param in model.parameters():
-            if param.requires_grad:
-                # Initialize an empty tensor for scatter_grad on all ranks
-                scatter_grad = torch.zeros_like(param.grad)
-
-                if rank == 0:
-                    # Only rank 0 prepares gathered_grads and performs the averaging
-                    gathered_grads = [torch.zeros_like(param.grad) for _ in range(world_size)]
-                    dist.gather(param.grad.data, gather_list=gathered_grads, dst=0)
-                    mean_grad = torch.mean(torch.stack(gathered_grads), dim=0)
-                    for i in range(world_size):
-                        gathered_grads[i] = mean_grad
-                    # Scatter averaged gradients from rank 0
-                    dist.scatter(tensor=scatter_grad, scatter_list=gathered_grads, src=0)
-                else:
-                    # Non-source ranks call scatter with an empty list for scatter_list
-                    dist.gather(param.grad.data, dst=0)
-                    dist.scatter(tensor=scatter_grad, scatter_list=[], src=0)
-
-                # Update gradients with the scattered values
-                param.grad.data = scatter_grad.data
+        sync_gradient(model)
         end_time = time.time()
 
-        optimizer.step()  # optimize the weights
+        optimizer.step()    # update the model with the gradients
 
         duration = end_time - start_time
         total_time.append(duration)
+
 
         if batch_idx % 20 == 0 or batch_idx == len(train_loader) - 1:
                 print('Train Epoch {}: [{}/{} ({:.1f}%)]\tBatch {}\tLoss: {:.4f}'.format(
@@ -87,8 +98,8 @@ def train_model(model, train_loader, optimizer, criterion, epoch, rank, world_si
                 
         if batch_idx >= 39:
             break
-
-    print('Runtime: Total: {:.4f}, Each gradient sync (scatter): {:.4f}\n'.format(sum(total_time[1:]), sum(total_time[1:])/len(total_time[1:])))
+        
+    print('Runtime: Total: {:.4f}, Each gradient synchonization (boardcast): {:.4f}\n'.format(sum(total_time[1:]), sum(total_time[1:])/len(total_time[1:])))
     return None
 
 def test_model(model, test_loader, criterion):
@@ -107,11 +118,10 @@ def test_model(model, test_loader, criterion):
     print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)))
+    
             
 
-def main(rank, world_size, master_addr, master_port):
-    setup_seed()
-    setup(rank, world_size, master_addr, master_port)
+def main():
     normalize = transforms.Normalize(mean=[x/255.0 for x in [125.3, 123.0, 113.9]],
                                 std=[x/255.0 for x in [63.0, 62.1, 66.7]])
     transform_train = transforms.Compose([
@@ -126,43 +136,42 @@ def main(rank, world_size, master_addr, master_port):
             normalize])
     training_set = datasets.CIFAR10(root="./data", train=True,
                                                 download=True, transform=transform_train)
-    train_sampler = DistributedSampler(training_set, num_replicas=world_size, rank=rank)
+                                                
+
+    train_sampler = DistributedSampler(training_set, num_replicas=args.num_nodes, rank=args.rank, seed=0)
     train_loader = torch.utils.data.DataLoader(training_set,
                                                     num_workers=2,
-                                                    batch_size=global_batch_size//world_size,
+                                                    batch_size=batch_size,
                                                     sampler=train_sampler,
-                                                    shuffle=False,
                                                     pin_memory=True)
     test_set = datasets.CIFAR10(root="./data", train=False,
                                 download=True, transform=transform_test)
 
     test_loader = torch.utils.data.DataLoader(test_set,
-                                              num_workers=2,
-                                              batch_size=global_batch_size//world_size,
-                                              shuffle=False,
-                                              pin_memory=True)
+                                            num_workers=2,
+                                            batch_size=global_batch_size,
+                                            shuffle=False,
+                                            pin_memory=True)
     training_criterion = torch.nn.CrossEntropyLoss().to(device)
 
     model = mdl.VGG11()
+    # model.disable_batchnorm()
     model.to(device)
-    # model = DDP(model) 
+    # model = DDP(model)
     optimizer = optim.SGD(model.parameters(), lr=0.1,
-                          momentum=0.9, weight_decay=0.0001)
+                        momentum=0.9, weight_decay=0.0001)
+
     # running training for one epoch
     for epoch in range(1):
-        train_model(model, train_loader, optimizer, training_criterion, epoch, rank, world_size)
+        train_model(model, train_loader, optimizer, training_criterion, epoch)
+
         dist.barrier()
-        if rank == 0:  # Only perform testing on the master process
+        
+        # only master need to test the accuracy of the final model
+        if args.rank == 0:
             test_model(model, test_loader, training_criterion)
-            # test_model(model.module if world_size > 1 else model, test_loader, training_criterion)
+
     dist.destroy_process_group()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Distributed PyTorch Training')
-    parser.add_argument('--rank', type=int, help='Rank of the current process')
-    parser.add_argument('--world_size', type=int, default=4, help='Total number of processes')
-    parser.add_argument('--master_addr', type=str, help='Master node IP address')
-    parser.add_argument('--master_port', type=str, help='Master node port')
-    args = parser.parse_args()
-
-    main(args.rank, args.world_size, args.master_addr, args.master_port)
+    main()

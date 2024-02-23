@@ -1,0 +1,22 @@
+    # Gradient synchronization using gather and scatter
+    for param in model.parameters():
+        if param.requires_grad:
+            # Initialize an empty tensor for scatter_grad on all ranks
+            scatter_grad = torch.zeros_like(param.grad)
+
+            if rank == 0:
+                # Only rank 0 prepares gathered_grads and performs the averaging
+                gathered_grads = [torch.zeros_like(param.grad) for _ in range(world_size)]
+                dist.gather(param.grad.data, gather_list=gathered_grads, dst=0)
+                mean_grad = torch.mean(torch.stack(gathered_grads), dim=0)
+                for i in range(world_size):
+                    gathered_grads[i] = mean_grad
+                # Scatter averaged gradients from rank 0
+                dist.scatter(tensor=scatter_grad, scatter_list=gathered_grads, src=0)
+            else:
+                # Non-source ranks call scatter with an empty list for scatter_list
+                dist.gather(param.grad.data, dst=0)
+                dist.scatter(tensor=scatter_grad, scatter_list=[], src=0)
+
+            # Update gradients with the scattered values
+            param.grad.data = scatter_grad.data
